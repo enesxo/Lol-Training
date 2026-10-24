@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Hextech Dodge Arena</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <div class="hud">
+      <div class="brand" id="hudBrand">HEXTECH DODGE</div>
+      <div class="stats">
+        <div class="stat" id="clockStat" hidden><span>Zeit</span><strong id="clock">1:20</strong></div>
+        <div class="stat"><span id="scoreLabel">Score</span><strong id="score">0</strong></div>
+        <div class="stat"><span>HP</span><strong id="health">5</strong></div>
+        <div class="stat"><span>Level</span><strong id="level">1</strong></div>
+      </div>
+    </div>
+
+    <main class="game-shell">
+      <canvas id="gameCanvas" width="960" height="800"></canvas>
+
+      <div class="overlay" id="overlay">
+        <div class="menu" id="menu">
+          <div class="menu-top">
+            <div class="menu-brand">
+              <svg class="panel-logo" viewBox="0 0 48 48" aria-hidden="true">
+                <defs>
+                  <linearGradient id="menuLogoBody" x1="0" y1="0" x2="1" y2="1">
+                    <stop offset="0" stop-color="#c4b5fd" />
+                    <stop offset="0.6" stop-color="#8b5cf6" />
+                    <stop offset="1" stop-color="#5b21b6" />
+                  </linearGradient>
+                  <radialGradient id="menuLogoCore">
+                    <stop offset="0" stop-color="#ffffff" />
+                    <stop offset="0.5" stop-color="#5eead4" />
+                    <stop offset="1" stop-color="#0891b2" />
+                  </radialGradient>
+                </defs>
+                <polygon points="46,24 35,43 13,43 2,24 13,5 35,5" fill="url(#menuLogoBody)" stroke="#ede9fe" stroke-width="2.2" stroke-linejoin="round" />
+                <polygon points="31,24 27.5,30 20.5,30 17,24 20.5,18 27.5,18" fill="url(#menuLogoCore)" />
+              </svg>
+              <div>
+                <p class="eyebrow">Hextech Arena</p>
+                <div class="menu-title">Modus wählen</div>
+              </div>
+            </div>
+            <div class="name-box">
+              <label for="playerName">Name</label>
+              <input id="playerName" type="text" maxlength="12" value="PLAYER" autocomplete="off" />
+            </div>
+          </div>
+
+          <div class="mode-cards">
+            <article class="mode-card" id="cardDodge">
+              <div class="mode-preview">
+                <span class="badge" id="lastBadge" hidden>Zuletzt gespielt</span>
+                <img class="pv-sprite pv-ball1" src="blaue_kugel.png" alt="" />
+                <img class="pv-sprite pv-ball2" src="blaue_kugel.png" alt="" />
+                <img class="pv-sprite pv-arrow" src="blauer_pfeil.png" alt="" />
+                <img class="pv-sprite pv-fire" src="gelber_feuerball.png" alt="" />
+                <svg class="pv-hex" viewBox="0 0 48 48" aria-hidden="true">
+                  <polygon points="46,24 35,43 13,43 2,24 13,5 35,5" fill="#8b5cf6" stroke="#ede9fe" stroke-width="2.2" stroke-linejoin="round" />
+                  <polygon points="31,24 27.5,30 20.5,30 17,24 20.5,18 27.5,18" fill="#5eead4" />
+                </svg>
+              </div>
+              <div class="mode-body">
+                <p class="mode-tag">Überleben</p>
+                <h2>Dodge</h2>
+                <p class="mode-desc">Weiche den Projektilen aus und halte so lange durch wie möglich. Wähle 1 bis 3 HP.</p>
+                <div class="mode-record"><span>&#9733; Rekord &middot; <span id="recordHp">2</span> HP</span><b id="recordValue" class="none">noch kein Wert</b></div>
+                <div class="mode-actions"><button id="playDodge" type="button">Spielen</button><i class="key">1</i></div>
+              </div>
+            </article>
+
+            <article class="mode-card" id="cardLastHit">
+              <div class="mode-preview">
+                <span class="badge muted" id="lhBadge">Neu</span>
+                <svg class="pv-art" viewBox="0 0 320 150" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+                <g stroke="rgba(255,255,255,.75)" stroke-width="1.5">
+                  <circle cx="58" cy="98" r="11" fill="#3b82f6" /><circle cx="84" cy="84" r="11" fill="#3b82f6" /><circle cx="110" cy="104" r="11" fill="#3b82f6" />
+                  <circle cx="40" cy="70" r="7" fill="#3b82f6" /><circle cx="66" cy="62" r="7" fill="#3b82f6" />
+                  <circle cx="196" cy="100" r="11" fill="#ef4444" /><circle cx="222" cy="84" r="11" fill="#ef4444" /><circle cx="248" cy="104" r="11" fill="#ef4444" />
+                  <circle cx="232" cy="64" r="7" fill="#ef4444" /><circle cx="268" cy="78" r="7" fill="#ef4444" />
+                </g>
+                <g>
+                  <rect x="45" y="78" width="26" height="4" rx="2" fill="rgba(0,0,0,.6)" /><rect x="45" y="78" width="23" height="4" rx="2" fill="#60a5fa" />
+                  <rect x="71" y="64" width="26" height="4" rx="2" fill="rgba(0,0,0,.6)" /><rect x="71" y="64" width="18" height="4" rx="2" fill="#60a5fa" />
+                  <rect x="97" y="84" width="26" height="4" rx="2" fill="rgba(0,0,0,.6)" /><rect x="97" y="84" width="14" height="4" rx="2" fill="#60a5fa" />
+                  <rect x="183" y="80" width="26" height="4" rx="2" fill="rgba(0,0,0,.6)" /><rect x="183" y="80" width="4" height="4" rx="2" fill="#f87171" />
+                  <rect x="209" y="64" width="26" height="4" rx="2" fill="rgba(0,0,0,.6)" /><rect x="209" y="64" width="17" height="4" rx="2" fill="#f87171" />
+                  <rect x="235" y="84" width="26" height="4" rx="2" fill="rgba(0,0,0,.6)" /><rect x="235" y="84" width="21" height="4" rx="2" fill="#f87171" />
+                </g>
+                <circle cx="196" cy="100" r="19" fill="none" stroke="#fbbf24" stroke-width="2" stroke-dasharray="4 3" />
+                <line x1="146" y1="56" x2="186" y2="90" stroke="#5eead4" stroke-width="2" stroke-dasharray="5 4" />
+                <polygon points="163,38 157,50 143,50 137,38 143,26 157,26" fill="#8b5cf6" stroke="#ede9fe" stroke-width="2" stroke-linejoin="round" />
+                <polygon points="157,38 154,44 146,44 143,38 146,32 154,32" fill="#5eead4" />
+              </svg>
+              </div>
+              <div class="mode-body">
+                <p class="mode-tag">Training</p>
+                <h2>Last Hit</h2>
+                <p class="mode-desc">Triff Minions im richtigen Moment, ohne Indikator. Ziel: 107 CS in 10 Minuten.</p>
+                <div class="mode-record"><span>Champion</span><b id="lhChampion" class="none">noch keiner gewählt</b></div>
+                <div class="mode-actions"><button id="openChamp" type="button">Champion wählen</button><i class="key">2</i></div>
+              </div>
+            </article>
+          </div>
+
+          <div class="mode-soon">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="9" rx="2" /><path d="M8 11V8a4 4 0 0 1 8 0v3" /></svg>
+            Weitere Modi folgen
+          </div>
+
+          <p class="riot-notice">Hextech Arena was created under Riot Games' "Legal Jibber Jabber" policy using assets owned by Riot Games. Riot Games does not endorse or sponsor this project.</p>
+
+          <div class="menu-keys">
+            <span><i class="key">1</i> Dodge</span>
+            <span><i class="key">2</i> Last Hit</span>
+            <span><i class="key">Enter</i> Zuletzt gespielten Modus starten</span>
+          </div>
+        </div>
+
+        <div class="champ-select" id="champSelect" hidden>
+          <div class="cs-top">
+            <div>
+              <button class="link-button" id="champBack" type="button">&lsaquo; Modus wechseln</button>
+              <p class="eyebrow">Last Hit</p>
+              <div class="menu-title">Champion wählen</div>
+            </div>
+            <input id="champSearch" type="search" placeholder="Champion suchen …" autocomplete="off" aria-label="Champion suchen" />
+          </div>
+
+          <div class="cs-filters">
+            <div class="seg small" id="champTagFilter" aria-label="Nach Rolle filtern">
+              <button class="active" type="button" data-tag="">Alle</button>
+              <button type="button" data-tag="Assassin">Assassine</button>
+              <button type="button" data-tag="Fighter">Kämpfer</button>
+              <button type="button" data-tag="Mage">Magier</button>
+              <button type="button" data-tag="Marksman">Schütze</button>
+              <button type="button" data-tag="Support">Unterstützer</button>
+              <button type="button" data-tag="Tank">Tank</button>
+            </div>
+            <div class="seg small" id="champRangeFilter" aria-label="Nach Reichweite filtern">
+              <button class="active" type="button" data-range="">Alle</button>
+              <button type="button" data-range="melee">Nahkampf</button>
+              <button type="button" data-range="ranged">Fernkampf</button>
+            </div>
+          </div>
+
+          <div class="cs-body">
+            <div class="cs-grid" id="champGrid"></div>
+            <aside class="cs-info" id="champInfo"></aside>
+          </div>
+
+          <div class="cs-footer">
+            <span class="cs-status" id="champStatus"></span>
+            <button id="champStart" type="button" disabled title="Der Last-Hit-Modus ist noch in Arbeit">Training starten</button>
+          </div>
+        </div>
+
+        <div class="panel" role="dialog" aria-labelledby="panelTitle" hidden>
+          <div class="panel-left">
+            <div class="panel-brand">
+              <svg class="panel-logo" viewBox="0 0 48 48" aria-hidden="true">
+                <defs>
+                  <linearGradient id="logoBody" x1="0" y1="0" x2="1" y2="1">
+                    <stop offset="0" stop-color="#c4b5fd" />
+                    <stop offset="0.6" stop-color="#8b5cf6" />
+                    <stop offset="1" stop-color="#5b21b6" />
+                  </linearGradient>
+                  <radialGradient id="logoCore">
+                    <stop offset="0" stop-color="#ffffff" />
+                    <stop offset="0.5" stop-color="#5eead4" />
+                    <stop offset="1" stop-color="#0891b2" />
+                  </radialGradient>
+                </defs>
+                <polygon points="46,24 35,43 13,43 2,24 13,5 35,5" fill="url(#logoBody)" stroke="#ede9fe" stroke-width="2.2" stroke-linejoin="round" />
+                <polygon points="31,24 27.5,30 20.5,30 17,24 20.5,18 27.5,18" fill="url(#logoCore)" />
+              </svg>
+              <div>
+                <p class="eyebrow" id="panelEyebrow">Arena Ready</p>
+                <div class="panel-title" id="panelTitle">Hextech Dodge</div>
+              </div>
+            </div>
+
+            <p class="player-line">Spieler: <b id="playerLine">PLAYER</b></p>
+
+            <div id="setupBlock">
+              <span class="field-label">Lebenspunkte</span>
+              <div class="seg" aria-label="Lebenspunkte auswählen">
+                <button class="hp-option" type="button" data-hp="1">1 HP</button>
+                <button class="hp-option active" type="button" data-hp="2">2 HP</button>
+                <button class="hp-option" type="button" data-hp="3">3 HP</button>
+              </div>
+            </div>
+
+            <div id="resultBlock" hidden>
+              <div class="result-score" id="resultScore">0</div>
+              <div class="result-label" id="resultLabel">Punkte</div>
+              <span class="badge" id="resultBadge"></span>
+              <div class="result-stats">
+                <div><b id="resultLevel">Level 1</b><small>erreicht</small></div>
+                <div><b id="resultTime">0:00</b><small>überlebt</small></div>
+              </div>
+            </div>
+
+            <div class="panel-actions">
+              <button id="startButton">Spiel starten</button>
+              <button class="link-button" id="settingsButton" type="button" hidden>HP ändern &rsaquo;</button>
+              <button class="link-button" id="backButton" type="button">&lsaquo; Modus wechseln</button>
+            </div>
+          </div>
+
+          <div class="panel-right">
+            <div class="board-head">
+              <h2>Bestenliste</h2>
+              <div class="seg small" aria-label="Bestenliste nach HP">
+                <button class="lb-option" type="button" data-board-hp="1">1 HP</button>
+                <button class="lb-option active" type="button" data-board-hp="2">2 HP</button>
+                <button class="lb-option" type="button" data-board-hp="3">3 HP</button>
+              </div>
+            </div>
+            <ol id="leaderboardList"></ol>
+          </div>
+
+          <div class="panel-keys" id="panelKeys">
+            <span><i class="key">Rechtsklick</i> Bewegen</span>
+            <span><i class="key">W</i> Dash</span>
+            <span><i class="key">S</i> Stopp</span>
+          </div>
+        </div>
+
+        <div class="lh-result" id="lhResult" hidden>
+          <div class="panel-left">
+            <p class="eyebrow is-over" id="lhResultEyebrow">Zeit abgelaufen</p>
+            <div class="panel-title">Run beendet</div>
+            <div class="result-score" id="lhResultCs">0 / 107</div>
+            <div class="result-label" id="lhResultLabel">CS bis 10:00</div>
+            <span class="badge" id="lhResultBadge"></span>
+            <div class="result-stats">
+              <div><b id="lhResultPct">0 %</b><small>vom Perfekt-Wert</small></div>
+              <div><b id="lhResultMissed">0</b><small>verpasst</small></div>
+              <div><b id="lhResultLevel">1</b><small>Level</small></div>
+              <div><b id="lhResultTime">10:00</b><small>Spielzeit</small></div>
+            </div>
+            <div class="panel-actions">
+              <button id="lhAgain" type="button">Nochmal</button>
+              <button class="link-button" id="lhChangeChamp" type="button">Champion wechseln &rsaquo;</button>
+              <button class="link-button" id="lhBack" type="button">&lsaquo; Modus wechseln</button>
+            </div>
+          </div>
+          <div class="panel-right">
+            <div class="board-head"><h2>Bestenliste Last Hit</h2></div>
+            <ol class="lh-board" id="lhBoard"></ol>
+          </div>
+        </div>
+
+        <div class="pause-panel" id="pausePanel" hidden>
+          <p class="eyebrow">Spiel angehalten</p>
+          <div class="panel-title">Pause</div>
+          <p class="pause-info" id="pauseInfo"></p>
+          <div class="pause-actions">
+            <button id="resumeButton" type="button">Weiterspielen</button>
+            <button class="link-button" id="abortButton" type="button">Run abbrechen</button>
+          </div>
+          <p class="pause-hint"><i class="key">Esc</i> weiter &middot; Abgebrochene Runs werden nicht gespeichert.</p>
+        </div>
+
+      </div>
+      <button class="dash-button" id="dashButton" type="button" aria-label="Dash">Dash</button>
+    </main>
+
+    <script src="champion-attack-data.js"></script>
+    <script src="script.js"></script>
+    <script src="lasthit.js"></script>
+  </body>
+</html>
