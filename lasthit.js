@@ -803,6 +803,8 @@ const lh = {
   endReason: '',
   lastRank: 0,
   passiveState: {},
+  slashes: [], // Hieb-Effekte der Nahkampf-Angriffe
+  playerSwing: null, // Ausholen und Vorstoßen der Figur bei Nahkampf-Angriffen
   delayed: [], // zeitversetzte Aktionen (z. B. zweiter Schuss)
   nextId: 1,
 };
@@ -1231,6 +1233,8 @@ function lhMinionFire(minion) {
   const type = MINION_TYPES[minion.type];
 
   if (!type.missile) {
+    lhSlash(target, minion, LH_COLORS[minion.team].light, false);
+    if (minion.swing) minion.swing.hitAt = lh.time;
     lhDamage(target, lhMinionDamageTo(minion, target), minion);
     return;
   }
@@ -1290,6 +1294,7 @@ function lhUpdateMinion(minion, dt) {
     } else if (minion.cooldown <= 0) {
       minion.windup = type.windup;
       minion.cooldown = 1 / type.attackSpeed;
+      if (!type.missile) minion.swing = lhStartSwing(minion.target, type.windup);
     }
   } else {
     minion.windup = 0;
@@ -1353,6 +1358,96 @@ function lhGainXp(amount) {
     lh.stats = lhChampStats(lh.level);
     lh.hp += lh.stats.maxHp - before.maxHp; // wie in LoL steigt das aktuelle Leben mit
     lhFloat(player.x, player.y - player.radius - 10, `Level ${lh.level}`, '#5eead4', 1.4);
+  }
+}
+
+// -----------------------------------------------------------------------------
+// Nahkampf-Animation: Ausholen, Vorstoßen und ein Hieb-Effekt am Ziel.
+// Nur Darstellung, die echte Position und die Trefferberechnung bleiben unverändert.
+// -----------------------------------------------------------------------------
+function lhStartSwing(target, duration) {
+  return { start: lh.time, duration: Math.max(0.05, duration), target };
+}
+
+// Verschiebung in Richtung Ziel: erst ausholen (zurück), dann vorstoßen, danach zurückfedern
+function lhSwingOffset(swing, reach) {
+  if (!swing) return 0;
+  if (swing.hitAt === undefined) {
+    const p = Math.min(1, (lh.time - swing.start) / swing.duration);
+    return p < 0.6 ? -reach * 0.4 * (p / 0.6) : -reach * 0.4 + reach * 1.4 * ((p - 0.6) / 0.4);
+  }
+  const back = (lh.time - swing.hitAt) / 0.14;
+  return back >= 1 ? 0 : reach * (1 - back);
+}
+
+function lhSwingVector(unit, swing, reach) {
+  if (!swing || !swing.target) return { x: 0, y: 0 };
+  const offset = lhSwingOffset(swing, reach);
+  const angle = Math.atan2(swing.target.y - unit.y, swing.target.x - unit.x);
+  return { x: Math.cos(angle) * offset, y: Math.sin(angle) * offset };
+}
+
+// Hieb am Ziel: Sichel auf der Seite, die dem Angreifer zugewandt ist
+function lhSlash(target, attacker, color, strong) {
+  lh.slashes.push({
+    x: target.x,
+    y: target.y,
+    angle: Math.atan2(attacker.y - target.y, attacker.x - target.x),
+    radius: target.radius + (strong ? 4 : 2.5),
+    color,
+    width: strong ? 2.6 : 1.6,
+    life: strong ? 0.2 : 0.16,
+    maxLife: strong ? 0.2 : 0.16,
+    alpha: strong ? 1 : 0.75,
+  });
+}
+
+function lhUpdateSlashes(dt) {
+  for (let i = lh.slashes.length - 1; i >= 0; i -= 1) {
+    lh.slashes[i].life -= dt;
+    if (lh.slashes[i].life <= 0) lh.slashes.splice(i, 1);
+  }
+  // abgebrochene Schläge (Ziel weg oder Animation abgebrochen) zurücksetzen
+  if (lh.playerSwing && lh.playerSwing.hitAt === undefined && lh.windup <= 0) lh.playerSwing = null;
+  if (lh.playerSwing && lh.playerSwing.hitAt !== undefined && lh.time - lh.playerSwing.hitAt > 0.2) lh.playerSwing = null;
+  for (const minion of lh.minions) {
+    const swing = minion.swing;
+    if (!swing) continue;
+    if ((swing.hitAt === undefined && minion.windup <= 0) || (swing.hitAt !== undefined && lh.time - swing.hitAt > 0.2)) minion.swing = null;
+  }
+}
+
+function lhDrawSlashes() {
+  for (const slash of lh.slashes) {
+    const progress = 1 - slash.life / slash.maxLife; // 0 -> 1
+    // Der Bogen läuft quer über das Ziel: sein Mittelpunkt liegt auf der Seite des Angreifers
+    const bend = slash.radius * 1.9;
+    const cx = slash.x + Math.cos(slash.angle) * bend * 0.85;
+    const cy = slash.y + Math.sin(slash.angle) * bend * 0.85;
+    const base = slash.angle + Math.PI;
+    const spread = 0.7;
+    // in den ersten 40 % wird der Hieb "gezogen", danach blendet er aus
+    const drawn = Math.min(1, progress / 0.4);
+    const from = base - spread;
+    const to = from + spread * 2 * drawn;
+    const fade = progress < 0.4 ? 1 : 1 - (progress - 0.4) / 0.6;
+    ctx.save();
+    ctx.globalAlpha = slash.alpha * Math.max(0, fade);
+    ctx.lineCap = 'round';
+    ctx.shadowColor = slash.color;
+    ctx.shadowBlur = 8;
+    ctx.strokeStyle = slash.color;
+    ctx.lineWidth = slash.width * 1.6;
+    ctx.beginPath();
+    ctx.arc(cx, cy, bend, from, to);
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = slash.width * 0.6;
+    ctx.beginPath();
+    ctx.arc(cx, cy, bend, from + 0.12, to - 0.05);
+    ctx.stroke();
+    ctx.restore();
   }
 }
 
@@ -1503,6 +1598,9 @@ function lhPlayerAttackDamage(target) {
 
 function lhLaunch(target, attack) {
   if (lhIsMelee()) {
+    lhSlash(target, player, '#e0f2fe', true);
+    if (lh.playerSwing) lh.playerSwing.hitAt = lh.time;
+    else lh.playerSwing = { start: lh.time, duration: 0.05, target, hitAt: lh.time }; // z. B. zweiter Schlag
     lhApplyAttack(target, attack);
     return;
   }
@@ -1585,6 +1683,7 @@ function lhUpdatePlayerAttack(dt) {
       const attackSpeed = lh.stats.attackSpeed + ((lh.champ.stats.attackspeed || 0.65) * extraAs) / 100;
       const interval = (1 / attackSpeed) * scale;
       lh.windup = interval * lhAttackInfo().windup;
+      if (lhIsMelee()) lh.playerSwing = lhStartSwing(target, lh.windup);
       lh.attackCooldown = interval;
     }
     return;
@@ -1657,6 +1756,8 @@ function startLastHit() {
   lh.minions = [];
   lh.missiles = [];
   lh.floats = [];
+  lh.slashes = [];
+  lh.playerSwing = null;
   lh.queue = lhBuildQueue();
   lh.cs = 0;
   lh.possible = 0;
@@ -1715,6 +1816,8 @@ function lhStop() {
   lh.minions = [];
   lh.missiles = [];
   lh.floats = [];
+  lh.slashes = [];
+  lh.playerSwing = null;
 }
 
 function lastHitStep(dt) {
@@ -1760,6 +1863,7 @@ function lastHitStep(dt) {
 
   updateParticles(dt);
   lhUpdateFloats(dt);
+  lhUpdateSlashes(dt);
   lhUpdateHUD();
 }
 
@@ -1931,11 +2035,16 @@ function lhDrawMinions() {
     const colors = LH_COLORS[minion.team];
     const r = minion.radius;
 
+    // Melee-Minions holen beim Angriff aus und stoßen vor (nur Darstellung)
+    const lunge = lhSwingVector(minion, minion.swing, r * 0.45);
+    const mx = minion.x + lunge.x;
+    const my = minion.y + lunge.y;
+
     ctx.save();
     ctx.globalAlpha = minion.ghostUntil > lh.time ? 0.75 : 1;
     ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
     ctx.beginPath();
-    ctx.ellipse(minion.x, minion.y + r * 0.55, r * 0.95, r * 0.45, 0, 0, Math.PI * 2);
+    ctx.ellipse(mx, my + r * 0.55, r * 0.95, r * 0.45, 0, 0, Math.PI * 2);
     ctx.fill();
 
     ctx.fillStyle = colors.body;
@@ -1944,9 +2053,9 @@ function lhDrawMinions() {
     ctx.beginPath();
     if (minion.type === 'siege') {
       const s = r * 0.9;
-      ctx.roundRect(minion.x - s, minion.y - s, s * 2, s * 2, 3);
+      ctx.roundRect(mx - s, my - s, s * 2, s * 2, 3);
     } else {
-      ctx.arc(minion.x, minion.y, r, 0, Math.PI * 2);
+      ctx.arc(mx, my, r, 0, Math.PI * 2);
     }
     ctx.fill();
     ctx.stroke();
@@ -1955,7 +2064,7 @@ function lhDrawMinions() {
     if (minion.type === 'caster') {
       ctx.fillStyle = colors.light;
       ctx.beginPath();
-      ctx.arc(minion.x, minion.y, r * 0.42, 0, Math.PI * 2);
+      ctx.arc(mx, my, r * 0.42, 0, Math.PI * 2);
       ctx.fill();
     }
     ctx.restore();
@@ -2061,7 +2170,14 @@ function lastHitDraw() {
   lhDrawMinions();
   lhDrawMissiles();
   drawParticles();
+  // Nahkampf: Figur holt aus und stößt vor (nur Darstellung)
+  const lunge = lhSwingVector(player, lh.playerSwing, player.radius * 0.45);
+  player.x += lunge.x;
+  player.y += lunge.y;
   drawPlayer();
+  player.x -= lunge.x;
+  player.y -= lunge.y;
+  lhDrawSlashes();
   lhDrawPlayerBar();
   lhDrawFloats();
   if (showWalls && lh.stats) lhDrawDebug();
