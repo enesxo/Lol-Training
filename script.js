@@ -1918,7 +1918,7 @@ function renderChampStatus() {
   startBtn.disabled = !champ;
   startBtn.title = champ ? '' : 'Wähle zuerst einen Champion';
   champStatus.textContent = champ
-    ? `Bereit mit ${champ.name}. Rechtsklick auf einen Minion greift an, S stoppt. Ziel: 107 CS bis 10:00.`
+    ? `Bereit mit ${champ.name}. Rechtsklick auf einen Minion greift an, S stoppt. Ziel: 114 CS bis 10:00.`
     : 'Wähle einen Champion, um das Training zu starten.';
 }
 

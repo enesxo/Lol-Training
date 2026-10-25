@@ -8,15 +8,15 @@
 
 const LH = {
   UNIT: 0.1636, // Welt-px pro LoL-Einheit (Abstand der äußeren Mid-Türme: 3760 Einheiten)
-  CLOCK_START: 80, // Uhr startet bei 1:20 (das Warten auf die erste Welle entfällt)
+  CLOCK_START: 45, // Uhr startet bei 0:45, kurz bevor die erste Welle den Turm erreicht
   CLOCK_END: 600, // Run endet bei 10:00
-  PERFECT_CS: 107, // 17 Wellen x 6 Minions + 5 Kanonen bis 10:00
-  FIRST_SPAWN: 65, // erste Welle am Nexus bei 1:05
+  PERFECT_CS: 114, // 18 Wellen x 6 Minions + 6 Kanonen, die bis 10:00 ankommen (Stand Patch 26.1)
+  FIRST_SPAWN: 30, // erste Welle am Nexus bei 0:30 (seit Patch 26.1, vorher 1:05)
   WAVE_INTERVAL: 30, // danach alle 30 Sekunden
   UPGRADE_INTERVAL: 90, // Minions werden alle 90 Sekunden stärker
   SPAWN_GAP: 0.792, // Abstand der Minions innerhalb einer Welle
   NEXUS_TO_TURRET: 8370, // Laufweg Nexus -> äußerer Mid-Turm in Einheiten (berechnet)
-  MINION_SPEED: 325, // Lauftempo der Minions bis Minute 11
+  MINION_SPEED: 350, // Grund-Lauftempo der Minions bis Minute 11 (seit Patch 26.1, vorher 325)
   ACQUISITION: 500, // Minions suchen Ziele in diesem Umkreis
   XP_RANGE: 1500, // Erfahrung gibt es nur in diesem Umkreis
   DAMAGE_TO_CHAMPIONS: 0.55, // Minions machen 55 % Schaden gegen Champions
@@ -57,14 +57,14 @@ const MINION_TYPES = {
     hp: (u) => Math.min(5850, 750 + 85 * u),
     ad: (u) => Math.min(126, 36 + 1.5 * u),
     armor: () => 0,
-    vsMinion: 0.06, xp: 75, turretShare: 0.14,
+    vsMinion: 0.05, xp: 75, turretShare: 0.14, // Bonus gegen Minions 5 % seit Patch 26.9
   },
 };
 
 // Äußere Türme (Schaden gegen Champions und Aufheizen aus älteren Quellen)
 const TURRET = {
   radius: 88.4, range: 750, attackSpeed: 0.83, missile: 1200,
-  adStart: 152, adPerMinute: 4, adMax: 180, heatStep: 0.375, heatMax: 0.75,
+  adStart: 152, adPerMinute: 4, adMax: 180, heatStep: 0.5, heatMax: 1.5, // Aufheizen: +50 % pro Treffer, bis +150 % (aktuelle Wiki-Angabe)
   minionPriority: { siege: 0, melee: 1, caster: 2 },
 };
 
@@ -121,6 +121,11 @@ const LH_COLORS = {
 // -----------------------------------------------------------------------------
 function lhLinear(min, max, level) {
   return min + ((max - min) * (level - 1)) / 17;
+}
+
+// Exakte Werte pro Level aus Riots Spieldaten (CommunityDragon), Index 0 = Level 1
+function lhByLevel(values, level) {
+  return values[Math.max(0, Math.min(values.length - 1, level - 1))];
 }
 
 // Stufenwerte: thresholds = Level, ab denen der jeweilige Wert gilt
@@ -184,7 +189,8 @@ const LH_PASSIVES = {
       if (stacks >= 2) {
         state.stacks = 0;
         // Radius nicht offiziell angegeben: Schätzung 300 Einheiten, das Ziel selbst wird mitgetroffen
-        return { cleave: { radius: 300, magic: lhLinear(20, 220, level) } };
+        const dianaCleave = [20, 25, 30, 35, 40, 45, 55, 65, 75, 85, 95, 110, 125, 140, 155, 170, 195, 220]; // Spieldaten
+        return { cleave: { radius: 300, magic: lhByLevel(dianaCleave, level) } }; // Radius: Schätzung (nicht in den Spieldaten)
       }
       state.stacks = stacks + 1;
       return {};
@@ -193,11 +199,11 @@ const LH_PASSIVES = {
 
   Akshan: {
     name: 'Dirty Fighting',
-    summary: 'Jeder Auto-Angriff feuert kurz danach einen zweiten Schuss mit 100 % AD gegen Minions. Jeder dritte Treffer auf dasselbe Ziel (5 Sekunden) macht 15 / 40 / 80 / 150 magischen Bonusschaden.',
+    summary: 'Jeder Auto-Angriff feuert kurz danach einen zweiten Schuss mit 100 % AD gegen Minions. Jeder dritte Treffer auf dasselbe Ziel (4,5 Sekunden) macht 15 / 40 / 80 / 150 magischen Bonusschaden.',
     onAttack(state, target, level) {
       const result = { secondShot: { delay: 0.15, adRatio: 1 } }; // Verzögerung: Schätzung
-      if (lhTargetStacks(state, target, 5, 3)) {
-        result.magic = lhBracket([15, 40, 80, 150], [1, 6, 11, 16], level); // Stufen-Level: Schätzung
+      if (lhTargetStacks(state, target, 4.5, 3)) { // Stapeldauer 4,5 s (Spieldaten)
+        result.magic = lhBracket([15, 40, 80, 150], [1, 6, 11, 16], level); // Stufen laut Spieldaten bestätigt
       }
       return result;
     },
@@ -215,16 +221,16 @@ const LH_PASSIVES = {
     name: 'Whisper',
     summary: '4 bis 44 % Bonus-Angriffsschaden. Nach 4 Schüssen wird nachgeladen; der vierte Schuss trifft kritisch (150,5 %) und macht 15 / 20 / 25 % des fehlenden Lebens als Bonus.',
     statMods(level) {
-      return { bonusAdPercent: lhLinear(4, 44, level) };
+      return { bonusAdPercent: lhByLevel([4, 5, 6, 7, 8, 9, 10, 11, 12, 14, 16, 20, 24, 28, 32, 36, 40, 44], level) }; // Spieldaten
     },
     onAttack(state, target, level) {
       state.shots = (state.shots || 0) + 1;
       if (state.shots < 4) return {};
       state.shots = 0;
       return {
-        critMultiplier: 1.505, // 175 % kritischer Schaden, bei Jhin um 14 % verringert
-        missingHealthPhysical: lhBracket([0.15, 0.2, 0.25], [1, 6, 11], level), // Stufen-Level: Schätzung
-        cooldownOverride: 2.5, // Nachladen nach dem vierten Schuss (Wert aus meinem Wissen)
+        critMultiplier: 1.5, // FourthShotDamageMult laut Spieldaten
+        missingHealthPhysical: lhBracket([0.15, 0.2, 0.25], [1, 6, 11], level), // Stufen laut Spieldaten bestätigt
+        cooldownOverride: 2.5, // Nachladen nach dem vierten Schuss (Spieldaten: ReloadTime 2,5 s)
       };
     },
   },
@@ -241,13 +247,13 @@ const LH_PASSIVES = {
 
   Kaisa: {
     name: 'Second Skin',
-    summary: 'Jeder Angriff setzt Plasma (4 Sekunden): 4 bis 24 magischen Bonusschaden plus 1 bis 6 pro vorhandenem Stapel. Der 5. Stapel platzt für 15 % des fehlenden Lebens.',
+    summary: 'Jeder Angriff setzt Plasma (4 Sekunden): 4 bis 30 magischen Bonusschaden plus 1 bis 8 pro vorhandenem Stapel. Der 5. Stapel platzt für 15 % des fehlenden Lebens.',
     onAttack(state, target, level) {
       const plasma = target.lhPlasma && lh.time < target.lhPlasma.expires ? target.lhPlasma.stacks : 0;
-      const result = { magic: lhLinear(4, 24, level) + lhLinear(1, 6, level) * plasma };
+      const result = { magic: lhLinear(4, 30, level) + lhLinear(1, 8, level) * plasma }; // Spieldaten: 4–30, +1–8 pro Stapel
       if (plasma + 1 >= 5) {
         target.lhPlasma = { stacks: 0, expires: 0 };
-        result.missingHealthMagic = 0.15; // Wert aus älterer Quelle, nicht live geprüft
+        result.missingHealthMagic = 0.15; // Spieldaten: PExecuteRatio 0,15
       } else {
         target.lhPlasma = { stacks: plasma + 1, expires: lh.time + 4 };
       }
@@ -257,13 +263,13 @@ const LH_PASSIVES = {
 
   Twitch: {
     name: 'Deadly Venom',
-    summary: 'Jeder Angriff setzt einen Gift-Stapel für 6 Sekunden (bis 6). Pro Stapel 1 / 2 / 3 / 4 / 5 echter Schaden pro Sekunde. Tötet das Gift einen Minion, zählt das als CS.',
+    summary: 'Jeder Angriff setzt einen Gift-Stapel für 6 Sekunden (bis 6). Pro Stapel 1 / 2 / 3 / 4 / 5 echter Schaden pro Sekunde (ab Level 1 / 5 / 9 / 13 / 17). Tötet das Gift einen Minion, zählt das als CS.',
     onAttack(state, target, level) {
       return {
         onHit(hitTarget) {
           lhApplyStackDot(hitTarget, 'venom', {
             max: 6, duration: 6, interval: 1, type: 'true',
-            perStack: lhBracket([1, 2, 3, 4, 5], [1, 5, 9, 13, 17], level), // Stufen-Level: Schätzung
+            perStack: lhBracket([1, 2, 3, 4, 5], [1, 5, 9, 13, 17], level), // Spieldaten: DamagePerSecond in TwitchDeadlyVenomMarker
           });
         },
       };
@@ -287,14 +293,14 @@ const LH_PASSIVES = {
 
   XinZhao: {
     name: 'Determination',
-    summary: 'Jeder dritte Angriff macht 15 / 30 / 45 / 60 % AD Bonusschaden und heilt um 3 / 3,5 / 4 % des maximalen Lebens (je nach Level).',
+    summary: 'Jeder dritte Angriff macht 15 / 30 / 45 / 60 % AD Bonusschaden und heilt um 2 / 3,5 / 5 % des maximalen Lebens (je nach Level).',
     onAttack(state, target, level) {
       state.stacks = (state.stacks || 0) + 1;
       if (state.stacks < 3) return {};
       state.stacks = 0;
       return {
-        physical: lhBracket([0.15, 0.3, 0.45, 0.6], [1, 6, 11, 16], level) * lh.stats.ad, // Stufen-Level: Schätzung
-        heal: lhBracket([0.03, 0.035, 0.04], [1, 7, 13], level) * lh.stats.maxHp, // Stufen-Level: Schätzung
+        physical: lhBracket([0.15, 0.3, 0.45, 0.6], [1, 6, 11, 16], level) * lh.stats.ad, // Stufen laut Spieldaten bestätigt
+        heal: lhBracket([0.02, 0.035, 0.05], [1, 6, 11], level) * lh.stats.maxHp, // Spieldaten (Bezug auf max. Leben angenommen)
       };
     },
   },
@@ -357,28 +363,28 @@ const LH_PASSIVES = {
 
   Nocturne: {
     name: 'Umbra Blades',
-    summary: 'Regelmäßig (10 Sekunden, jeder Angriff verkürzt um 1 Sekunde) schlägt der nächste Angriff im Kreis: 120 % AD am Ziel, gegen umstehende Minions die Hälfte.',
+    summary: 'Alle 12 Sekunden (jeder Angriff verkürzt um 1 Sekunde) schlägt der nächste Angriff im Kreis (360 Einheiten): 120 % AD am Ziel, gegen umstehende Minions die Hälfte.',
     onAttack(state) {
       state.readyAt = state.readyAt === undefined ? lh.time : state.readyAt;
       if (lh.time < state.readyAt) {
         state.readyAt -= 1; // jeder normale Angriff verkürzt die Abklingzeit
         return {};
       }
-      state.readyAt = lh.time + 10; // Grund-Abklingzeit aus älterer Quelle
+      state.readyAt = lh.time + 12; // Abklingzeit laut Spieldaten
       return {
         critMultiplier: 1.2,
-        cleave: { radius: 250, physical: 0.6 * lh.stats.ad }, // Radius: Schätzung
+        cleave: { radius: 360, physical: 0.6 * lh.stats.ad }, // Radius laut Spieldaten
       };
     },
   },
 
   Aatrox: {
     name: 'Deathbringer Stance',
-    summary: 'Regelmäßig macht der nächste Angriff 4 bis 8 % des maximalen Lebens des Ziels als magischen Bonus (je nach Level) und heilt um 25 % davon gegen Minions.',
+    summary: 'Regelmäßig macht der nächste Angriff 4 bis 10 % des maximalen Lebens des Ziels als magischen Bonus (je nach Level) und heilt um 25 % davon gegen Minions.',
     onAttack(state, target, level) {
       if (lh.time < (state.readyAt || 0)) return {};
-      state.readyAt = lh.time + lhLinear(24, 12, level); // Abklingzeit aus meinem Wissen, nicht geprüft
-      const magic = lhLinear(0.04, 0.08, level) * target.maxHp;
+      state.readyAt = lh.time + lhLinear(22, 10, level); // Spieldaten
+      const magic = lhLinear(0.04, 0.1, level) * target.maxHp; // Spieldaten: 4–10 %
       return { magic, heal: 0.25 * magic };
     },
   },
@@ -392,14 +398,14 @@ const LH_PASSIVES = {
       const leg = ((Math.floor((angle + Math.PI) / (Math.PI / 3)) % 6) + 6) % 6;
       state.legs = state.legs || [0, 0, 0, 0, 0, 0];
       if (lh.time < state.legs[leg]) return {};
-      state.legs[leg] = lh.time + lhBracket([30, 20, 10, 5, 2.5], [1, 6, 9, 12, 15], level); // Stufen-Level: Schätzung
-      const adPart = lhLinear(0.4, 1.0, level) * lh.stats.ad;
-      const hpPct = lhLinear(0.02, 0.06, level);
+      state.legs[leg] = lh.time + lhBracket([30, 20, 10, 5, 2.5], [1, 6, 9, 11, 13], level); // Spieldaten
+      const adPart = lhBracket([0.4, 0.52, 0.64, 0.76, 0.88, 1.0], [1, 6, 9, 11, 13, 15], level) * lh.stats.ad; // Spieldaten
+      const hpPct = lhBracket([0.02, 0.03, 0.04, 0.05, 0.06], [1, 6, 9, 11, 13], level); // Spieldaten
       return {
         impactPhysical(hitTarget) {
           return adPart + hpPct * hitTarget.maxHp;
         },
-        cleave: { radius: 425, physicalFn: (m) => adPart + hpPct * m.maxHp, cone: { angle, width: Math.PI / 3 } }, // Reichweite: Schätzung
+        cleave: { radius: 700, physicalFn: (m) => adPart + hpPct * m.maxHp, cone: { angle, width: Math.PI / 3 } }, // Reichweite laut Spieldaten (CastRange 700), Kegelbreite: Schätzung
       };
     },
   },
@@ -440,7 +446,9 @@ const LH_PASSIVES = {
     onAttack(state, target, level) {
       const bolt = lhLinear(5, 39, level);
       // Abstände und Flugzeit der Geschosse: Schätzung
-      return { extraHits: [{ delay: 0.25, magic: bolt }, { delay: 0.35, magic: bolt }, { delay: 0.45, magic: bolt }] };
+      // Pix-Geschosse fliegen mit 900 Einheiten/s (Spieldaten); Abstand zwischen den Geschossen: Schätzung
+      const flight = lhDist(player, target) / LH.UNIT / 900;
+      return { extraHits: [0, 1, 2].map((i) => ({ delay: 0.05 + 0.08 * i + flight, magic: bolt })) };
     },
   },
 
@@ -536,31 +544,49 @@ const LH_PASSIVES = {
 
   Naafiri: {
     name: 'We Are More',
-    summary: 'Nach jedem Angriff greifen ihre Rudeltiere das Ziel 2 Sekunden lang an (2 / 3 / 4 / 5 Tiere je nach Level, je 10 bis 20 physischer Schaden). Holt ein Rudeltier den letzten Treffer, zählt das als CS.',
+    summary: 'Ihre Rudeltiere (2 / 3 / 4 / 5 ab Level 1 / 9 / 12 / 15) greifen nach ihren Angriffen 2 Sekunden lang ihr Ziel an, mit ihrem Angriffstempo und je 10 bis 20 physischem Schaden. Gelegentlich erledigen sie selbst Minions unter 25 bis 76 Leben. Ihre Todesstöße zählen als CS.',
     onAttack(state, target) {
       state.packTarget = target;
       state.packUntil = lh.time + 2;
       return {};
     },
     onUpdate(state) {
-      const target = state.packTarget;
-      if (!target || !target.alive || lh.time >= (state.packUntil || 0)) return;
-      const count = lhBracket([2, 3, 4, 5], [1, 6, 11, 16], lh.level); // Stufen-Level: Schätzung
+      const count = lhBracket([2, 3, 4, 5], [1, 9, 12, 15], lh.level);
+      const interval = 1 / lh.stats.attackSpeed; // 100 % von Naafiris Angriffstempo
+      const damage = lhLinear(10, 20, lh.level);
+      const snipeBelow = 25 + 3 * (lh.level - 1); // Spieldaten: 25 bis 76
+      const reach = 400 * LH.UNIT; // Umkreis für eigene Todesstöße: Schätzung
       state.packNext = state.packNext || [];
+      state.snipeReady = state.snipeReady || [];
+      const engaged = state.packTarget && state.packTarget.alive && lh.time < (state.packUntil || 0);
+
       for (let i = 0; i < count; i += 1) {
-        if (state.packNext[i] === undefined || state.packNext[i] < lh.time - 1) state.packNext[i] = lh.time + 0.15 * i;
-        if (lh.time >= state.packNext[i]) {
-          state.packNext[i] = lh.time + 1; // ein Angriff pro Sekunde und Tier: Schätzung
-          lhDamage(target, lhMitigate(lhLinear(10, 20, lh.level), target.armor), LH_PLAYER);
-          if (!target.alive) return;
+        if (state.packNext[i] === undefined) state.packNext[i] = lh.time + 0.12 * i;
+        if (lh.time < state.packNext[i]) continue;
+
+        // Gelegentlich: ein angeschlagener Minion in der Nähe wird vom Rudeltier selbst erledigt
+        // (pro Tier höchstens alle 3 Sekunden, Schätzung)
+        if (lh.time >= (state.snipeReady[i] || 0)) {
+          const prey = lh.minions.find((m) => m.alive && m.team === 'red' && m.hp < snipeBelow && lhDist(m, player) <= reach);
+          if (prey) {
+            state.packNext[i] = lh.time + interval;
+            state.snipeReady[i] = lh.time + 3;
+            lhDamage(prey, prey.hp, LH_PLAYER); // Hinrichtung: Minion unter der Grenze stirbt sofort (MinionExecuteThreshold)
+            continue;
+          }
         }
+
+        if (!engaged) continue;
+        state.packNext[i] = lh.time + interval;
+        lhDamage(state.packTarget, lhMitigate(damage, state.packTarget.armor), LH_PLAYER);
+        if (!state.packTarget.alive) break;
       }
     },
   },
 
   Graves: {
     name: 'New Destiny',
-    summary: 'Jeder Schuss feuert 4 Schrotkugeln: die erste 70 bis 100 % AD, jede weitere auf dasselbe Ziel 23,3 bis 33,3 % AD. Minions vor dem Ziel fangen Kugeln ab. Nach 2 Schüssen 2,08 Sekunden Nachladen.',
+    summary: 'Jeder Schuss feuert 4 Schrotkugeln: die erste 70 bis 100 % AD, jede weitere auf dasselbe Ziel 33,3 % davon. Minions vor dem Ziel fangen Kugeln ab. Nach 2 Schüssen wird nachgeladen (2,08 Sekunden auf Level 1, schneller mit steigendem Level).',
     attackTimeScale(state) {
       // Zwischen den zwei Patronen kurzer Abstand (Schätzung 0,4 s), danach Nachladen
       return 0.4 * lh.stats.attackSpeed; // Nachladen kommt über cooldownOverride dazu
@@ -568,8 +594,8 @@ const LH_PASSIVES = {
     onAttack(state, target, level) {
       if (state.shells === undefined || state.shells <= 0) state.shells = 2;
       state.shells -= 1;
-      const first = lhLinear(0.7, 1.0, level);
-      const extra = lhLinear(0.2331, 0.333, level);
+      const first = lhByLevel([0.7, 0.7113, 0.7234, 0.7363, 0.75, 0.7644, 0.7797, 0.7958, 0.8126, 0.8303, 0.8487, 0.8679, 0.888, 0.9088, 0.9304, 0.9528, 0.976, 1.0001], level); // Spieldaten
+      const extra = 0.333 * first; // weitere Kugeln: 33,3 % der ersten (Spieldaten)
       // Minions zwischen Graves und dem Ziel im Kegel fangen je eine Kugel ab (Kegel: Schätzung ±15 Grad)
       const aim = Math.atan2(target.y - player.y, target.x - player.x);
       const targetDist = lhDist(target, player);
@@ -587,15 +613,37 @@ const LH_PASSIVES = {
         critMultiplier: first + extra * (onTarget - 1),
         splashHits: blockers.map((unit) => ({ unit, physical: first * lh.stats.ad })),
       };
-      if (state.shells === 0) result.cooldownOverride = 2.08; // Nachladen (Wert für Level 1, sinkt mit dem Level)
+      if (state.shells === 0) {
+        // 2,08 s ohne Bonus; sinkt mit dem Angriffstempo-Zuwachs pro Level (genaue Formel laut Wiki unbekannt)
+        const growthAs = ((lh.champ.stats.attackspeedperlevel || 0) * lhGrowth(level)) / 100;
+        result.cooldownOverride = 2.08 / (1 + growthAs);
+      }
       return result;
     },
   },
 
   Zeri: {
     name: 'Living Battery',
-    summary: 'Ihre Angriffe machen statt Angriffsschaden 10 bis 25 magischen Schaden (je nach Level) und richten Ziele unter 70 bis 160 Leben hin. Der voll aufgeladene Schuss ist nicht enthalten.',
+    summary: 'Ihre Angriffe machen statt Angriffsschaden 10 bis 25 magischen Schaden und richten Ziele unter 70 bis 160 Leben hin (je nach Level). Laufen lädt sie auf (1 Ladung pro 40 Einheiten, gelber Balken). Bei voller Ladung macht der nächste Angriff 75 bis 160 plus 1 bis 11 % des maximalen Lebens.',
+    resourceBar(state) {
+      return (state.charge === undefined ? 100 : state.charge) / 100;
+    },
+    onUpdate(state) {
+      if (state.charge === undefined) state.charge = 100; // startet voll aufgeladen
+      if (state.lastX !== undefined) {
+        const moved = Math.hypot(player.x - state.lastX, player.y - state.lastY) / LH.UNIT;
+        state.charge = Math.min(100, state.charge + moved / 40);
+      }
+      state.lastX = player.x;
+      state.lastY = player.y;
+    },
     onAttack(state, target, level) {
+      if (state.charge === undefined) state.charge = 100;
+      if (state.charge >= 100) {
+        state.charge = 0;
+        return { critMultiplier: 0, magic: lhLinear(75, 160, level) + lhLinear(0.01, 0.11, level) * target.maxHp };
+      }
+      if (state.charge >= 10) state.charge -= 10;
       return { critMultiplier: 0, magic: lhLinear(10, 25, level), executeBelow: lhLinear(70, 160, level) };
     },
   },
@@ -654,7 +702,7 @@ const LH_PASSIVES = {
     name: 'Death in Lavender',
     summary: 'Stirbt ein Kanonen-Minion in ihrer Nähe, erhält sie dauerhaft 2 Lavender-Stapel mit je 0,1 bis 2 % Bonus-Angriffstempo (je nach Level). Ihr Angriffstempo wächst nicht pro Level.',
     attackSpeedBonus(state) {
-      return (state.lavender || 0) * lhLinear(0.1, 2, lh.level);
+      return (state.lavender || 0) * lhByLevel([0.1, 0.15, 0.2, 0.25, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.95, 1.1, 1.25, 1.4, 1.55, 1.7, 1.85, 2.0], lh.level); // Spieldaten
     },
     onMinionDeath(state, minion) {
       if (minion.type === 'siege' && lhDist(minion, player) <= 1000 * LH.UNIT) state.lavender = (state.lavender || 0) + 2; // "in der Nähe": Schätzung
@@ -666,11 +714,11 @@ const LH_PASSIVES = {
 
   Caitlyn: {
     name: 'Headshot',
-    summary: 'Nach 5 Angriffen wird der nächste zum Headshot: 110 / 115 / 120 % AD Bonusschaden gegen Minions (je nach Level).',
+    summary: 'Nach 5 Angriffen wird der nächste zum Headshot: 110 % AD Bonusschaden gegen Minions (auf jedem Level).',
     onAttack(state, target, level) {
       if ((state.stacks || 0) >= 5) {
         state.stacks = 0; // Annahme: der Headshot selbst baut keinen neuen Stapel auf
-        return { physical: lhBracket([1.1, 1.15, 1.2], [1, 7, 13], level) * lh.stats.ad }; // Stufen-Level: Schätzung
+        return { physical: 1.1 * lh.stats.ad }; // Spieldaten: gegen Minions auf jedem Level 110 % AD
       }
       state.stacks = (state.stacks || 0) + 1;
       return {};
@@ -804,6 +852,7 @@ const lh = {
   lastRank: 0,
   passiveState: {},
   slashes: [], // Hieb-Effekte der Nahkampf-Angriffe
+  beams: [], // Strahlen der Fernkämpfer ohne Geschoss
   playerSwing: null, // Ausholen und Vorstoßen der Figur bei Nahkampf-Angriffen
   delayed: [], // zeitversetzte Aktionen (z. B. zweiter Schuss)
   nextId: 1,
@@ -865,8 +914,10 @@ function lhAttackInfo() {
   const data = typeof LH_ATTACK_DATA !== 'undefined' ? LH_ATTACK_DATA[lh.champ.id] : null;
   return {
     windup: data && data[0] ? data[0] : LH.WINDUP_SHARE,
-    missile: data && data[1] ? data[1] : null,
+    // null = unbekannt (Ersatzwert), 0 = kein Geschoss (Treffer sofort am Ende der Animation)
+    missile: data && data[1] !== null && data[1] !== undefined ? data[1] : null,
     radius: data && data[2] ? data[2] : LH.CHAMPION_RADIUS,
+    windupModifier: data && data[3] !== null && data[3] !== undefined ? data[3] : 1,
     known: Boolean(data),
   };
 }
@@ -908,7 +959,7 @@ function lhBuildQueue() {
 
     const types = ['melee', 'melee', 'melee'];
     // Kanone mit der 4. Welle, danach jede dritte Welle
-    if (wave >= 3 && (wave - 3) % 3 === 0) types.push('siege');
+    if (wave >= 2 && (wave - 2) % 3 === 0) types.push('siege'); // Kanone ab Welle 3, dann jede dritte (Patch 26.1)
     types.push('caster', 'caster', 'caster');
 
     const upgrades = lhUpgradesAt(spawnTime);
@@ -977,7 +1028,7 @@ function lhPriority(minion, candidate) {
   }
   if (candidate.kind === 'player') {
     // Champion greift einen eigenen Minion an
-    if (lh.attackingRecently > 0 && lh.attackTarget && lh.attackTarget.team === minion.team) return 5;
+    // Seit Patch 26.10 zieht ein Champion, der Minions angreift, keine Minion-Aggro mehr
     return 7;
   }
   return 99;
@@ -1171,7 +1222,7 @@ function lhKillMinion(minion, source) {
 
   // Erfahrung, wenn die Figur nah genug ist
   if (LH_PLAYER.alive && lhDist(minion, LH_PLAYER) <= LH.XP_RANGE * LH.UNIT) {
-    lhGainXp(MINION_TYPES[minion.type].xp);
+    lhGainXp(MINION_TYPES[minion.type].xp * 0.95); // allein in Reichweite: 95 % (seit Patch 12.22)
   }
 }
 
@@ -1452,6 +1503,11 @@ function lhDrawSlashes() {
 }
 
 function lhCancelAttack() {
+  // Wie in LoL: im letzten Tick (0,033 s) vor dem Treffer lässt sich der Angriff nicht mehr abbrechen
+  if (lh.windup > 0 && lh.windup <= 0.033 && lh.attackTarget) {
+    lh.cancelAfterFire = true;
+    return;
+  }
   lh.attackTarget = null;
   lh.windup = 0; // Angriffsanimation abbrechen
 }
@@ -1604,11 +1660,42 @@ function lhLaunch(target, attack) {
     lhApplyAttack(target, attack);
     return;
   }
+  // Fernkämpfer ohne Geschoss (z. B. Zeri, Senna, Thresh): Treffer sofort, sichtbar als kurzer Strahl
+  if (lhAttackInfo().missile === 0) {
+    lh.beams.push({ x1: player.x, y1: player.y, target, life: 0.12, maxLife: 0.12 });
+    lhApplyAttack(target, attack);
+    return;
+  }
   lhMissile(player.x, player.y, target, lhProjectileSpeed(), () => lhApplyAttack(target, attack), {
     color: '#5eead4',
     size: 2.6,
     glow: true,
   });
+}
+
+function lhUpdateBeams(dt) {
+  for (let i = lh.beams.length - 1; i >= 0; i -= 1) {
+    lh.beams[i].life -= dt;
+    if (lh.beams[i].life <= 0) lh.beams.splice(i, 1);
+  }
+}
+
+function lhDrawBeams() {
+  for (const beam of lh.beams) {
+    const fade = beam.life / beam.maxLife;
+    ctx.save();
+    ctx.globalAlpha = fade;
+    ctx.strokeStyle = '#a5f3fc';
+    ctx.shadowColor = '#5eead4';
+    ctx.shadowBlur = 8;
+    ctx.lineCap = 'round';
+    ctx.lineWidth = 2.2 * fade + 0.6;
+    ctx.beginPath();
+    ctx.moveTo(beam.x1, beam.y1);
+    ctx.lineTo(beam.target.x, beam.target.y);
+    ctx.stroke();
+    ctx.restore();
+  }
 }
 
 function lhPlayerFire(target) {
@@ -1667,7 +1754,7 @@ function lhUpdatePlayerAttack(dt) {
   const rangeBonus = passiveNow && passiveNow.rangeBonus ? passiveNow.rangeBonus(lh.passiveState) : 0;
   const range = (lh.stats.range + rangeBonus) * LH.UNIT;
   if (lhEdgeDist(LH_PLAYER, target) <= range) {
-    if (player.path.length) stopMoving();
+    if (player.path.length && !lh.cancelAfterFire) stopMoving(); // Laufbefehl aus der Abbruch-Sperre nicht verwerfen
     player.facing = Math.atan2(target.y - player.y, target.x - player.x);
 
     if (lh.windup > 0) {
@@ -1675,6 +1762,11 @@ function lhUpdatePlayerAttack(dt) {
       if (lh.windup <= 0) {
         lh.windup = 0;
         lhPlayerFire(target);
+        if (lh.cancelAfterFire) {
+          // Bewegungsbefehl aus dem letzten Tick jetzt ausführen
+          lh.cancelAfterFire = false;
+          lh.attackTarget = null;
+        }
       }
     } else if (lh.attackCooldown <= 0) {
       const passive = LH_PASSIVES[lh.champ.id];
@@ -1682,7 +1774,9 @@ function lhUpdatePlayerAttack(dt) {
       const extraAs = passive && passive.attackSpeedBonus ? passive.attackSpeedBonus(lh.passiveState) : 0;
       const attackSpeed = lh.stats.attackSpeed + ((lh.champ.stats.attackspeed || 0.65) * extraAs) / 100;
       const interval = (1 / attackSpeed) * scale;
-      lh.windup = interval * lhAttackInfo().windup;
+      const info = lhAttackInfo();
+      const baseWindup = info.windup / (lh.champ.stats.attackspeed || 0.65);
+      lh.windup = Math.max(0.01, baseWindup + (info.windup * interval - baseWindup) * info.windupModifier);
       if (lhIsMelee()) lh.playerSwing = lhStartSwing(target, lh.windup);
       lh.attackCooldown = interval;
     }
@@ -1757,6 +1851,7 @@ function startLastHit() {
   lh.missiles = [];
   lh.floats = [];
   lh.slashes = [];
+  lh.beams = [];
   lh.playerSwing = null;
   lh.queue = lhBuildQueue();
   lh.cs = 0;
@@ -1769,6 +1864,7 @@ function startLastHit() {
   lh.attackingRecently = 0;
   lh.holdAttack = false;
   lh.passiveState = {};
+  lh.cancelAfterFire = false;
   lh.delayed = [];
   lh.endReason = '';
   lh.over = false;
@@ -1864,6 +1960,7 @@ function lastHitStep(dt) {
   updateParticles(dt);
   lhUpdateFloats(dt);
   lhUpdateSlashes(dt);
+  lhUpdateBeams(dt);
   lhUpdateHUD();
 }
 
@@ -2117,6 +2214,10 @@ function lhDrawPlayerBar() {
   const width = Math.max(22, player.radius * 2.6);
   const y = player.y - player.radius - 9;
   lhDrawHealthBar(player.x, y, width, lh.hp / lh.stats.maxHp, '#4ade80');
+  const passiveBar = LH_PASSIVES[lh.champ.id];
+  if (passiveBar && passiveBar.resourceBar) {
+    lhDrawHealthBar(player.x, y + 3.6, width, passiveBar.resourceBar(lh.passiveState), '#facc15');
+  }
   ctx.save();
   ctx.font = 'bold 6px Inter, "Segoe UI", sans-serif';
   ctx.textAlign = 'right';
@@ -2178,6 +2279,7 @@ function lastHitDraw() {
   player.x -= lunge.x;
   player.y -= lunge.y;
   lhDrawSlashes();
+  lhDrawBeams();
   lhDrawPlayerBar();
   lhDrawFloats();
   if (showWalls && lh.stats) lhDrawDebug();
