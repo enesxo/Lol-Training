@@ -103,7 +103,7 @@
               <div class="mode-body">
                 <p class="mode-tag">Training</p>
                 <h2>Last Hit</h2>
-                <p class="mode-desc">Triff Minions im richtigen Moment, ohne Indikator. Ziel: 114 CS in 10 Minuten.</p>
+                <p class="mode-desc">Triff Minions im richtigen Moment, ohne Indikator. Ziel: alle CS deiner gewählten Wellen.</p>
                 <div class="mode-record"><span>Champion</span><b id="lhChampion" class="none">noch keiner gewählt</b></div>
                 <div class="mode-actions"><button id="openChamp" type="button">Champion wählen</button><i class="key">2</i></div>
               </div>
@@ -154,6 +154,14 @@
           <div class="cs-body">
             <div class="cs-grid" id="champGrid"></div>
             <aside class="cs-info" id="champInfo"></aside>
+          </div>
+
+          <div class="cs-waves">
+            <span class="cs-waves-label">Wellen</span>
+            <button type="button" class="step" id="wavesMinus" aria-label="Eine Welle weniger">&minus;</button>
+            <b id="wavesValue">18</b>
+            <button type="button" class="step" id="wavesPlus" aria-label="Eine Welle mehr">+</button>
+            <span class="cs-waves-info" id="wavesInfo">Ziel 114 CS</span>
           </div>
 
           <div class="cs-footer">
@@ -254,7 +262,13 @@
             </div>
           </div>
           <div class="panel-right">
-            <div class="board-head"><h2>Bestenliste Last Hit</h2></div>
+            <div class="board-head">
+              <h2 id="lhBoardTitle">Bestenliste Last Hit</h2>
+              <div class="seg small" id="lhBoardMode" aria-label="Bestenliste filtern">
+                <button class="active" type="button" data-mode="champ" id="lhBoardChamp">Champion</button>
+                <button type="button" data-mode="all">Alle</button>
+              </div>
+            </div>
             <ol class="lh-board" id="lhBoard"></ol>
           </div>
         </div>
@@ -265,9 +279,10 @@
           <p class="pause-info" id="pauseInfo"></p>
           <div class="pause-actions">
             <button id="resumeButton" type="button">Weiterspielen</button>
+            <button class="link-button" id="restartButton" type="button">Neu starten</button>
             <button class="link-button" id="abortButton" type="button">Run abbrechen</button>
           </div>
-          <p class="pause-hint"><i class="key">Esc</i> weiter &middot; Abgebrochene Runs werden nicht gespeichert.</p>
+          <p class="pause-hint"><i class="key">Esc</i> weiter &middot; <i class="key">R</i> neu starten &middot; Abgebrochene oder neu gestartete Runs werden nicht gespeichert.</p>
         </div>
 
       </div>

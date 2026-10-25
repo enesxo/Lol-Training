@@ -1205,3 +1205,56 @@ button:disabled:hover {
 #champStart {
   white-space: nowrap;
 }
+
+/* Wellenzahl in der Champion-Auswahl */
+.cs-waves {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.cs-waves-label {
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-size: 0.7rem;
+  color: var(--cyan);
+}
+
+.cs-waves .step {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border-radius: 8px;
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.cs-waves .step:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.cs-waves b {
+  min-width: 26px;
+  text-align: center;
+  font-size: 1rem;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.cs-waves-info {
+  margin-left: 6px;
+}
+
+/* Bestenliste Last Hit: Umschalter Champion / Alle */
+#lhResult .board-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}

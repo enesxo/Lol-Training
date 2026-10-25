@@ -9,8 +9,9 @@
 const LH = {
   UNIT: 0.1636, // Welt-px pro LoL-Einheit (Abstand der äußeren Mid-Türme: 3760 Einheiten)
   CLOCK_START: 45, // Uhr startet bei 0:45, kurz bevor die erste Welle den Turm erreicht
-  CLOCK_END: 600, // Run endet bei 10:00
-  PERFECT_CS: 114, // 18 Wellen x 6 Minions + 6 Kanonen, die bis 10:00 ankommen (Stand Patch 26.1)
+  MAX_WAVES: 18, // höchste einstellbare Wellenzahl (18 Wellen = etwa die ersten 10 Minuten)
+  DEFAULT_WAVES: 18,
+  END_GRACE: 120, // Sicherheitsgrenze: spätestens so lange nach Ankunft der letzten Welle endet der Run
   FIRST_SPAWN: 30, // erste Welle am Nexus bei 0:30 (seit Patch 26.1, vorher 1:05)
   WAVE_INTERVAL: 30, // danach alle 30 Sekunden
   UPGRADE_INTERVAL: 90, // Minions werden alle 90 Sekunden stärker
@@ -168,11 +169,12 @@ const LH_PASSIVES = {
 
   Ziggs: {
     name: 'Short Fuse',
-    summary: 'Alle 12 Sekunden macht der nächste Auto-Angriff 20 bis 184 magischen Bonusschaden (je nach Level).',
+    summary: 'Alle 12 Sekunden macht der nächste Auto-Angriff 20 bis 160 magischen Bonusschaden (in Stufen je nach Level).',
     onAttack(state, target, level) {
       if (lh.time < (state.readyAt || 0)) return {};
       state.readyAt = lh.time + 12;
-      return { magic: lhLinear(20, 184, level) };
+      const ziggsDamage = [20, 24, 28, 32, 36, 40, 48, 56, 64, 72, 80, 88, 100, 112, 124, 136, 148, 160]; // Spieldaten
+      return { magic: lhByLevel(ziggsDamage, level) };
     },
   },
 
@@ -211,9 +213,13 @@ const LH_PASSIVES = {
 
   Ekko: {
     name: 'Z-Drive Resonance',
-    summary: 'Jeder dritte Treffer auf dasselbe Ziel innerhalb von 4 Sekunden macht 30 bis 150 magischen Bonusschaden (je nach Level).',
+    summary: 'Jeder dritte Treffer auf dasselbe Ziel innerhalb von 4 Sekunden macht 30 bis 140 magischen Bonusschaden (je nach Level). Danach ist dasselbe Ziel 4 Sekunden gesperrt.',
     onAttack(state, target, level) {
-      return lhTargetStacks(state, target, 4, 3) ? { magic: lhLinear(30, 150, level) } : {};
+      if (lh.time < (target.lhEkkoLockUntil || 0)) return {}; // Sperre nach dem Auslösen (LockoutTime 4 s)
+      if (!lhTargetStacks(state, target, 4, 3)) return {};
+      target.lhEkkoLockUntil = lh.time + 4;
+      const ekkoDamage = [30, 40, 50, 60, 70, 80, 85, 90, 95, 100, 105, 110, 115, 120, 125, 130, 135, 140]; // Spieldaten
+      return { magic: lhByLevel(ekkoDamage, level) };
     },
   },
 
@@ -237,11 +243,12 @@ const LH_PASSIVES = {
 
   MissFortune: {
     name: 'Love Tap',
-    summary: 'Der erste Angriff auf ein neues Ziel macht 25 bis 50 % AD Bonusschaden gegen Minions (gegen Champions doppelt so viel). Das Ziel wird markiert, nur ein Ziel gleichzeitig.',
+    summary: 'Der erste Angriff auf ein neues Ziel macht 25 bis 50 % AD Bonusschaden gegen Minions in Stufen ab Level 1 / 4 / 7 / 9 / 11 / 13 (gegen Champions doppelt so viel). Das Ziel wird markiert, nur ein Ziel gleichzeitig.',
     onAttack(state, target, level) {
       if (state.marked === target) return {};
       state.marked = target;
-      return { physical: lhLinear(0.25, 0.5, level) * lh.stats.ad };
+      // Spieldaten: 50 / 60 / 70 / 80 / 90 / 100 % AD ab Level 1 / 4 / 7 / 9 / 11 / 13, gegen Minions die Hälfte
+      return { physical: 0.5 * lhBracket([0.5, 0.6, 0.7, 0.8, 0.9, 1.0], [1, 4, 7, 9, 11, 13], level) * lh.stats.ad };
     },
   },
 
@@ -283,7 +290,7 @@ const LH_PASSIVES = {
       return {
         onHit(hitTarget) {
           lhApplyStackDot(hitTarget, 'bleed', {
-            max: 5, duration: 5, interval: 1.25, type: 'physical',
+            max: 5, duration: 5.05, interval: 1.26, type: 'physical', // Spieldaten: SecondsPerTick 1,26 (4 Ticks)
             perStack: lhLinear(3.25, 7.5, level), // pro Tick und Stapel (4 Ticks = 13 bis 30)
           });
         },
@@ -454,14 +461,14 @@ const LH_PASSIVES = {
 
   Nautilus: {
     name: 'Staggering Blow',
-    summary: 'Auto-Angriffe machen 14 bis 128 physischen Bonusschaden (je nach Level) und wurzeln das Ziel fest. Auf dasselbe Ziel nur alle 6 Sekunden.',
+    summary: 'Auto-Angriffe machen 14 bis 116 physischen Bonusschaden (+6 pro Level) und wurzeln das Ziel fest. Auf dasselbe Ziel nur alle 6 Sekunden.',
     onAttack(state, target, level) {
       if (lh.time < (target.lhNautUntil || 0)) return {};
       target.lhNautUntil = lh.time + 6;
       return {
-        physical: lhLinear(14, 128, level),
+        physical: 14 + 6 * (level - 1), // Spieldaten: 14 bis 116
         onHit(hitTarget) {
-          hitTarget.lhRootedUntil = lh.time + lhLinear(0.75, 1.5, level);
+          hitTarget.lhRootedUntil = lh.time + lhBracket([0.75, 1, 1.25, 1.5], [1, 6, 11, 16], level); // Spieldaten
         },
       };
     },
@@ -499,9 +506,9 @@ const LH_PASSIVES = {
 
   Warwick: {
     name: 'Eternal Hunger',
-    summary: 'Auto-Angriffe machen 6 bis 46 magischen Bonusschaden (je nach Level). Unter 50 % Leben heilt Warwick um diesen Schaden, unter 25 % um das 2,5-Fache.',
+    summary: 'Auto-Angriffe machen 6 bis 55 magischen Bonusschaden (je nach Level). Unter 50 % Leben heilt Warwick um diesen Schaden, unter 25 % um das 2,5-Fache.',
     onAttack(state, target, level) {
-      const magic = lhLinear(6, 46, level);
+      const magic = lhLinear(6, 55, level); // Spieldaten: 6 bis 55
       const ratio = lh.hp / lh.stats.maxHp;
       const heal = ratio < 0.25 ? 2.5 * magic : ratio < 0.5 ? magic : 0;
       return { magic, heal };
@@ -650,9 +657,11 @@ const LH_PASSIVES = {
 
   Shaco: {
     name: 'Backstab',
-    summary: 'Trifft er einen Minion von hinten, macht sein Angriff 20 bis 30 physischen Bonusschaden (je nach Level). Minions blicken in ihre Lauf- oder Angriffsrichtung.',
+    summary: 'Trifft er einen Minion von hinten, macht sein Angriff 20 bis 35 physischen Bonusschaden (je nach Level), pro Ziel höchstens alle 3 Sekunden. Minions blicken in ihre Lauf- oder Angriffsrichtung.',
     onAttack(state, target, level) {
-      return { behindPhysical: lhLinear(20, 30, level) };
+      if (lh.time < (target.lhShacoLockUntil || 0) || !lhIsBehind(target)) return {}; // Sperre pro Ziel 3 s (PerUnitCD)
+      target.lhShacoLockUntil = lh.time + 3;
+      return { behindPhysical: lhLinear(20, 35, level) }; // Spieldaten: 20 bis 35
     },
   },
 
@@ -668,14 +677,14 @@ const LH_PASSIVES = {
 
   Jax: {
     name: 'Relentless Assault',
-    summary: 'Jeder Angriff gibt einen Stapel für 2,5 Sekunden (bis 8) mit 5 bis 12,5 % Bonus-Angriffstempo pro Stapel (je nach Level). Danach verfallen die Stapel einzeln alle 0,25 Sekunden.',
+    summary: 'Jeder Angriff gibt einen Stapel für 2,5 Sekunden (bis 8) mit 5 bis 12,5 % Bonus-Angriffstempo pro Stapel (Stufen ab Level 1 / 4 / 7 / 10 / 13 / 16). Danach verfallen die Stapel einzeln alle 0,35 Sekunden.',
     currentStacks(state) {
       if (!state.stacks) return 0;
       const over = lh.time - state.until;
-      return over <= 0 ? state.stacks : Math.max(0, state.stacks - Math.ceil(over / 0.25));
+      return over <= 0 ? state.stacks : Math.max(0, state.stacks - Math.ceil(over / 0.35)); // FallOffRate 0,35 s
     },
     attackSpeedBonus(state) {
-      return this.currentStacks(state) * lhLinear(5, 12.5, lh.level);
+      return this.currentStacks(state) * lhBracket([5, 6.5, 8, 9.5, 11, 12.5], [1, 4, 7, 10, 13, 16], lh.level); // Spieldaten
     },
     onAttack(state) {
       state.stacks = Math.min(8, this.currentStacks(state) + 1);
@@ -686,7 +695,7 @@ const LH_PASSIVES = {
 
   Volibear: {
     name: 'The Relentless Storm',
-    summary: 'Jeder Treffer gibt einen Stapel für 6 Sekunden (bis 5) mit 5 % Bonus-Angriffstempo. Ab 5 Stapeln springt ein Blitz mit 11 bis 68 magischem Schaden vom Ziel zu bis zu 4 Minions in der Nähe.',
+    summary: 'Jeder Treffer gibt einen Stapel für 6 Sekunden (bis 5) mit 5 % Bonus-Angriffstempo. Ab 5 Stapeln springt ein Blitz mit 11 bis 60 magischem Schaden vom Ziel zu bis zu 4 Minions in der Nähe.',
     attackSpeedBonus(state) {
       return lh.time < (state.until || 0) ? 5 * state.stacks : 0;
     },
@@ -694,7 +703,8 @@ const LH_PASSIVES = {
       state.stacks = lh.time < (state.until || 0) ? Math.min(5, state.stacks + 1) : 1;
       state.until = lh.time + 6;
       if (state.stacks < 5) return {};
-      return { chain: { magic: lhLinear(11, 68, level), range: 450, jumps: 4 } };
+      const chainDamage = [11, 12, 13, 15, 17, 19, 22, 25, 28, 31, 34, 37, 40, 44, 48, 52, 56, 60]; // Spieldaten
+      return { chain: { magic: lhByLevel(chainDamage, level), range: 450, jumps: 4 } }; // 5 Ziele insgesamt (BounceCounterMax 5)
     },
   },
 
@@ -812,7 +822,7 @@ function lhUpdateDots() {
   }
 }
 
-const lhBoardKey = 'hextech-lasthit-board';
+const lhBoardKey = 'hextech-lasthit-board-v2'; // pro Wellenzahl; die alte Liste (Zählung bis 107) bleibt unter dem alten Schlüssel
 const LH_BOARD_SIZE = 5;
 
 // Die Spielfigur als Einheit für Zielwahl und Schaden
@@ -948,17 +958,49 @@ function lhUnitAlive(unit) {
 // -----------------------------------------------------------------------------
 // Ablaufplan der Wellen
 // -----------------------------------------------------------------------------
-function lhBuildQueue() {
+const lhWavesKey = 'hextech-lasthit-waves';
+
+function lhSelectedWaves() {
+  try {
+    const value = Number(localStorage.getItem(lhWavesKey));
+    if (Number.isInteger(value) && value >= 1 && value <= LH.MAX_WAVES) return value;
+  } catch (error) {
+    // nicht lesbar: Standardwert
+  }
+  return LH.DEFAULT_WAVES;
+}
+
+function lhSetSelectedWaves(value) {
+  const waves = Math.max(1, Math.min(LH.MAX_WAVES, Math.round(value)));
+  try {
+    localStorage.setItem(lhWavesKey, String(waves));
+  } catch (error) {
+    // nicht speicherbar: gilt nur für diese Sitzung
+  }
+  return waves;
+}
+
+// Perfekt-Wert: 6 Minions pro Welle plus eine Kanone in jeder dritten Welle (Welle 3, 6, 9 ...)
+function lhPerfectFor(waves) {
+  return waves * 6 + Math.floor(waves / 3);
+}
+
+// Ungefähres Ende: letzte Welle trifft sich in der Mitte, plus etwa 35 Sekunden Kampf (aus der Simulation)
+function lhEstimatedEnd(waves) {
+  const travel = LH.NEXUS_TO_TURRET / LH.MINION_SPEED;
+  const meet = LH.FIRST_SPAWN + (waves - 1) * LH.WAVE_INTERVAL + travel + 5.4;
+  return meet + 35;
+}
+
+function lhBuildQueue(maxWaves = LH.DEFAULT_WAVES) {
   const queue = [];
   const travel = LH.NEXUS_TO_TURRET / LH.MINION_SPEED;
 
-  for (let wave = 0; ; wave += 1) {
+  for (let wave = 0; wave < maxWaves; wave += 1) {
     const spawnTime = LH.FIRST_SPAWN + wave * LH.WAVE_INTERVAL;
     const appear = spawnTime + travel;
-    if (appear > LH.CLOCK_END) break;
 
     const types = ['melee', 'melee', 'melee'];
-    // Kanone mit der 4. Welle, danach jede dritte Welle
     if (wave >= 2 && (wave - 2) % 3 === 0) types.push('siege'); // Kanone ab Welle 3, dann jede dritte (Patch 26.1)
     types.push('caster', 'caster', 'caster');
 
@@ -1118,7 +1160,11 @@ function lhFollowLane(minion, step) {
   if (minion.resumeLane) lhResumeLane(minion);
   while (minion.pathIndex < minion.path.length) {
     const point = minion.path[minion.pathIndex];
-    if (Math.hypot(point.x - minion.x, point.y - minion.y) < 3) {
+    // Wegpunkt erreicht, wenn nah genug (etwa der eigene Radius) oder schon daran vorbei.
+    // Sonst blockieren sich mehrere Minions am selben Wegpunkt gegenseitig.
+    const prev = minion.path[minion.pathIndex - 1] || point;
+    const passed = (point.x - prev.x) * (minion.x - point.x) + (point.y - prev.y) * (minion.y - point.y) > 0;
+    if (Math.hypot(point.x - minion.x, point.y - minion.y) < minion.radius + 2 || passed) {
       minion.pathIndex += 1;
       continue;
     }
@@ -1853,7 +1899,10 @@ function startLastHit() {
   lh.slashes = [];
   lh.beams = [];
   lh.playerSwing = null;
-  lh.queue = lhBuildQueue();
+  lh.waves = lhSelectedWaves();
+  lh.perfect = lhPerfectFor(lh.waves);
+  lh.queue = lhBuildQueue(lh.waves);
+  lh.hardEnd = lh.queue[lh.queue.length - 1].time + LH.END_GRACE;
   lh.cs = 0;
   lh.possible = 0;
   lh.missed = 0;
@@ -1920,8 +1969,8 @@ function lastHitStep(dt) {
   if (!lh.running) return;
 
   lh.time += dt;
-  if (lh.time >= LH.CLOCK_END) {
-    lh.time = LH.CLOCK_END;
+  // Sicherheitsgrenze, falls eine Welle hängen bleibt
+  if (lh.time >= lh.hardEnd) {
     lhEnd('time');
     return;
   }
@@ -1954,6 +2003,10 @@ function lastHitStep(dt) {
   lhSeparate();
   pushOutOfWalls(player);
   lh.minions = lh.minions.filter((m) => m.alive);
+  if (!lh.queue.some((e) => e.team === 'red') && !lh.minions.some((m) => m.team === 'red')) {
+    lhEnd('done'); // alle gegnerischen Minions der gewählten Wellen sind gestorben
+    return;
+  }
 
   lh.hp = Math.min(lh.stats.maxHp, lh.hp + lh.stats.regen * dt);
 
@@ -1979,8 +2032,8 @@ function lhReadBoard() {
     const parsed = JSON.parse(localStorage.getItem(lhBoardKey) || '[]');
     return Array.isArray(parsed)
       ? parsed
-          .filter((e) => e && Number.isFinite(Number(e.cs)))
-          .map((e) => ({ name: sanitizeName(e.name), champ: String(e.champ || ''), cs: Math.floor(Number(e.cs)), died: Boolean(e.died) }))
+          .filter((e) => e && Number.isFinite(Number(e.cs)) && Number.isInteger(Number(e.waves)))
+          .map((e) => ({ name: sanitizeName(e.name), champ: String(e.champ || ''), champId: String(e.champId || e.champ || ''), cs: Math.floor(Number(e.cs)), died: Boolean(e.died), waves: Number(e.waves), at: Number(e.at) || 0 }))
       : [];
   } catch (error) {
     return [];
@@ -1995,14 +2048,36 @@ function lhSaveBoard(board) {
   }
 }
 
+let lhBoardMode = 'champ'; // 'champ' = nur der aktuelle Champion, 'all' = alle Champions
+
+// Beste Einträge einer Wellenzahl, optional nur für einen Champion
+function lhBoardFor(waves, champId = null) {
+  return lhReadBoard()
+    .filter((e) => e.waves === waves && (!champId || e.champId === champId))
+    .sort((a, b) => b.cs - a.cs || a.at - b.at)
+    .slice(0, LH_BOARD_SIZE);
+}
+
+// Gespeichert werden je Wellenzahl und Champion die besten 5; "Alle" ergibt sich daraus
 function lhSubmit() {
-  const board = lhReadBoard();
-  const entry = { name: sanitizeName(nameInput.value), champ: lh.champ.name, cs: lh.cs, died: lh.endReason === 'dead' };
-  board.push(entry);
-  board.sort((a, b) => b.cs - a.cs);
-  const top = board.slice(0, LH_BOARD_SIZE);
-  lhSaveBoard(top);
-  return top.indexOf(entry) + 1;
+  const all = lhReadBoard();
+  const entry = {
+    name: sanitizeName(nameInput.value),
+    champ: lh.champ.name,
+    champId: lh.champ.id,
+    cs: lh.cs,
+    died: lh.endReason === 'dead',
+    waves: lh.waves,
+    at: Date.now(),
+  };
+  const sameGroup = (e) => e.waves === lh.waves && e.champId === lh.champ.id;
+  const group = [...all.filter(sameGroup), entry].sort((x, y) => y.cs - x.cs || x.at - y.at).slice(0, LH_BOARD_SIZE);
+  lhSaveBoard([...all.filter((e) => !sameGroup(e)), ...group]);
+
+  lh.lastEntryAt = entry.at;
+  lh.champRank = lhBoardFor(lh.waves, lh.champ.id).findIndex((e) => e.at === entry.at) + 1;
+  lh.overallRank = lhBoardFor(lh.waves).findIndex((e) => e.at === entry.at) + 1;
+  return lh.champRank;
 }
 
 function lhEnd(reason) {
@@ -2020,7 +2095,14 @@ function lhEnd(reason) {
 
 function lhRenderBoard() {
   const list = document.getElementById('lhBoard');
-  const board = lhReadBoard();
+  const waves = lh.over ? lh.waves : lhSelectedWaves();
+  const champ = lh.champ || findChampion(selectedChampion);
+  const board = lhBoardFor(waves, lhBoardMode === 'champ' && champ ? champ.id : null);
+  document.getElementById('lhBoardTitle').textContent = `Bestenliste · ${waves} ${waves === 1 ? 'Welle' : 'Wellen'}`;
+  document.getElementById('lhBoardChamp').textContent = champ ? champ.name : 'Champion';
+  document.querySelectorAll('#lhBoardMode button').forEach((button) => {
+    button.classList.toggle('active', button.dataset.mode === lhBoardMode);
+  });
   list.replaceChildren();
 
   if (!board.length) {
@@ -2033,7 +2115,7 @@ function lhRenderBoard() {
 
   board.forEach((entry, index) => {
     const item = document.createElement('li');
-    if (lh.over && index === lh.lastRank - 1) item.className = 'me';
+    if (lh.over && entry.at === lh.lastEntryAt) item.className = 'me';
     const rank = document.createElement('span');
     rank.className = 'rank';
     rank.textContent = String(index + 1);
@@ -2054,19 +2136,21 @@ function lhRenderBoard() {
 
 function lhShowResult() {
   const died = lh.endReason === 'dead';
-  document.getElementById('lhResultEyebrow').textContent = died ? `Gestorben bei ${lhFormatClock(lh.time)}` : 'Zeit abgelaufen';
-  document.getElementById('lhResultCs').textContent = `${lh.cs} / ${LH.PERFECT_CS}`;
-  document.getElementById('lhResultLabel').textContent = `CS bis ${lhFormatClock(lh.time)} · ${lh.champ.name}`;
-  document.getElementById('lhResultPct').textContent = `${Math.round((lh.cs / LH.PERFECT_CS) * 100)} %`;
+  const eyebrow = died ? `Gestorben bei ${lhFormatClock(lh.time)}` : lh.endReason === 'done' ? 'Alle Wellen geschafft' : 'Zeit abgelaufen';
+  document.getElementById('lhResultEyebrow').textContent = eyebrow;
+  document.getElementById('lhResultCs').textContent = `${lh.cs} / ${lh.perfect}`;
+  document.getElementById('lhResultLabel').textContent = `${lh.waves} ${lh.waves === 1 ? 'Welle' : 'Wellen'} · ${lh.champ.name}`;
+  document.getElementById('lhResultPct').textContent = `${Math.round((lh.cs / lh.perfect) * 100)} %`;
   document.getElementById('lhResultMissed').textContent = String(lh.missed);
   document.getElementById('lhResultLevel').textContent = String(lh.level);
   document.getElementById('lhResultTime').textContent = lhFormatClock(lh.time);
 
   const badge = document.getElementById('lhResultBadge');
-  if (lh.lastRank === 1 && lh.cs > 0) badge.textContent = 'Platz 1 · Neuer Rekord';
-  else if (lh.lastRank > 0) badge.textContent = `Platz ${lh.lastRank}`;
+  if (lh.overallRank === 1 && lh.cs > 0) badge.textContent = 'Neuer Gesamtrekord';
+  else if (lh.champRank === 1 && lh.cs > 0) badge.textContent = `Neuer Rekord mit ${lh.champ.name}`;
+  else if (lh.champRank > 0) badge.textContent = `Platz ${lh.champRank} mit ${lh.champ.name}`;
   else badge.textContent = 'Nicht in den Top 5';
-  badge.classList.toggle('muted', lh.lastRank === 0);
+  badge.classList.toggle('muted', lh.champRank === 0);
 
   lhRenderBoard();
   menuEl.hidden = true;
@@ -2080,8 +2164,10 @@ function lhShowResult() {
 // Startseite: Bestwert auf der Last-Hit-Karte
 function lhRenderCard() {
   const badge = document.getElementById('lhBadge');
-  const best = lhReadBoard()[0];
-  badge.textContent = best ? `Bestwert ${best.cs} / ${LH.PERFECT_CS}` : 'Neu';
+  const waves = lhSelectedWaves();
+  const champ = findChampion(selectedChampion);
+  const best = lhBoardFor(waves, champ ? champ.id : null)[0];
+  badge.textContent = best ? `Bestwert ${best.cs} / ${lhPerfectFor(waves)}` : 'Neu';
   badge.classList.toggle('muted', !best);
 }
 
@@ -2296,7 +2382,33 @@ function lastHitDraw() {
 });
 
 document.getElementById('champStart').addEventListener('click', startLastHit);
+
+// Wellenzahl in der Champion-Auswahl
+function lhRenderWaves() {
+  const waves = lhSelectedWaves();
+  document.getElementById('wavesValue').textContent = String(waves);
+  document.getElementById('wavesInfo').textContent = `Ziel ${lhPerfectFor(waves)} CS · Ende etwa ${lhFormatClock(lhEstimatedEnd(waves))}`;
+  document.getElementById('wavesMinus').disabled = waves <= 1;
+  document.getElementById('wavesPlus').disabled = waves >= LH.MAX_WAVES;
+  if (typeof renderChampStatus === 'function') renderChampStatus();
+  lhRenderCard();
+}
+
+function lhChangeWaves(delta) {
+  lhSetSelectedWaves(lhSelectedWaves() + delta);
+  lhRenderWaves();
+}
+
+document.getElementById('wavesMinus').addEventListener('click', () => lhChangeWaves(-1));
+document.getElementById('wavesPlus').addEventListener('click', () => lhChangeWaves(1));
+lhRenderWaves();
 document.getElementById('lhAgain').addEventListener('click', startLastHit);
+document.querySelectorAll('#lhBoardMode button').forEach((button) => {
+  button.addEventListener('click', () => {
+    lhBoardMode = button.dataset.mode;
+    lhRenderBoard();
+  });
+});
 document.getElementById('lhChangeChamp').addEventListener('click', openChampSelect);
 document.getElementById('lhBack').addEventListener('click', showMenu);
 

@@ -1918,7 +1918,7 @@ function renderChampStatus() {
   startBtn.disabled = !champ;
   startBtn.title = champ ? '' : 'Wähle zuerst einen Champion';
   champStatus.textContent = champ
-    ? `Bereit mit ${champ.name}. Rechtsklick auf einen Minion greift an, S stoppt. Ziel: 114 CS bis 10:00.`
+    ? `Bereit mit ${champ.name}. Rechtsklick auf einen Minion greift an, S stoppt.`
     : 'Wähle einen Champion, um das Training zu starten.';
 }
 
@@ -2044,6 +2044,14 @@ function resumeGame() {
   overlay.classList.add('hidden');
   lastTime = 0; // kein Zeitsprung nach der Pause
   animationFrameId = requestAnimationFrame(gameLoop);
+}
+
+// Neu starten: Run verwerfen (nicht speichern) und mit denselben Einstellungen neu beginnen
+function restartRun() {
+  paused = false;
+  pausePanel.hidden = true;
+  if (gameMode === 'lasthit') startLastHit();
+  else startGame();
 }
 
 // Run abbrechen: zurück zur Startseite, der Run wird nicht gespeichert
@@ -2184,6 +2192,12 @@ window.addEventListener('keydown', (event) => {
       return;
     }
   }
+  // R im Pausenfenster: neu starten
+  if (paused && !event.repeat && event.key.toLowerCase() === 'r') {
+    event.preventDefault();
+    restartRun();
+    return;
+  }
   if (paused) return; // während der Pause keine Spieltasten
 
   const overlayVisible = !overlay.classList.contains('hidden');
@@ -2261,6 +2275,12 @@ window.addEventListener('keyup', (event) => {
 // Fenster verliert den Fokus: keine Taste bleibt "hängen"
 window.addEventListener('blur', () => {
   for (const key of Object.keys(keys)) keys[key] = false;
+  pauseGame(); // automatische Pause beim Fensterwechsel (nur während eines laufenden Runs)
+});
+
+// Tab gewechselt oder Fenster minimiert: ebenfalls pausieren
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) pauseGame();
 });
 
 // Dash-Button für Touch-Geräte
@@ -2300,6 +2320,7 @@ startButton.addEventListener('click', () => {
 // Game Over: Name und HP ändern, statt das Ergebnis zu zeigen
 document.getElementById('resumeButton').addEventListener('click', resumeGame);
 document.getElementById('abortButton').addEventListener('click', abortRun);
+document.getElementById('restartButton').addEventListener('click', restartRun);
 
 settingsButton.addEventListener('click', () => {
   showSettings = true;
