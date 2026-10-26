@@ -201,9 +201,15 @@ const LH_PASSIVES = {
 
   Akshan: {
     name: 'Dirty Fighting',
-    summary: 'Jeder Auto-Angriff feuert kurz danach einen zweiten Schuss mit 100 % AD gegen Minions. Jeder dritte Treffer auf dasselbe Ziel (4,5 Sekunden) macht 15 / 40 / 80 / 150 magischen Bonusschaden.',
+    summary: 'Jeder Auto-Angriff feuert kurz danach (0,41 s auf Level 1, kürzer mit mehr Angriffstempo) einen zweiten, schnelleren Schuss mit 100 % AD gegen Minions. Jeder dritte Treffer auf dasselbe Ziel (4,5 Sekunden) macht 15 / 40 / 80 / 150 magischen Bonusschaden.',
     onAttack(state, target, level) {
-      const result = { secondShot: { delay: 0.15, adRatio: 1 } }; // Verzögerung: Schätzung
+      // Zweiter Schuss, gemessen im Practice Tool (60 fps) auf Level 1, 12 und 18:
+      // - trifft Minions mit 100 % AD (Schadenszahlen 52 / 81 / 103 = AD auf dem jeweiligen Level)
+      // - Abstand der Mündungsblitze 0,378 / 0,333 / 0,317 s bei Angriffstempo 0,638 / 0,889 / 1,072
+      //   -> 0,227 s + 0,0963 / Angriffstempo, plus ca. 0,032 s vom Blitz bis zum Abflug
+      // - Geschoss 5000 statt 2000 (Spieldaten: AkshanPassiveAttack)
+      const delay = 0.259 + 0.0963 / lh.stats.attackSpeed;
+      const result = { secondShot: { delay, adRatio: 1, speed: 5000 } };
       if (lhTargetStacks(state, target, 4.5, 3)) { // Stapeldauer 4,5 s (Spieldaten)
         result.magic = lhBracket([15, 40, 80, 150], [1, 6, 11, 16], level); // Stufen laut Spieldaten bestätigt
       }
@@ -247,7 +253,8 @@ const LH_PASSIVES = {
     onAttack(state, target, level) {
       if (state.marked === target) return {};
       state.marked = target;
-      // Spieldaten: 50 / 60 / 70 / 80 / 90 / 100 % AD ab Level 1 / 4 / 7 / 9 / 11 / 13, gegen Minions die Hälfte
+      // Spieldaten: 50 / 60 / 70 / 80 / 90 / 100 % AD ab Level 1 / 4 / 7 / 9 / 11 / 13,
+      // gegen Minions die Hälfte (Spieldaten: MinionDamage = TotalDamage x 0,5)
       return { physical: 0.5 * lhBracket([0.5, 0.6, 0.7, 0.8, 0.9, 1.0], [1, 4, 7, 9, 11, 13], level) * lh.stats.ad };
     },
   },
@@ -492,13 +499,17 @@ const LH_PASSIVES = {
 
   Locke: {
     name: 'Silver Stake',
-    summary: 'Auto-Angriffe machen 5 bis 40 magischen Bonus (je nach Level), erhöht um bis zu 100 % je nach fehlendem Leben des Ziels.',
+    summary: 'Auto-Angriffe machen 5 bis 40 magischen Bonus (je nach Level), +7,14 % pro 5 % fehlendem Leben des Ziels. Ab 30 % Rest-Leben gilt das Maximum von 10 bis 80.',
     onAttack(state, target, level) {
       const base = lhLinear(5, 40, level);
       return {
+        // +7,14 % pro volle 5 % fehlendes Leben, Maximum (doppelter Wert) bei 70 % fehlendem Leben.
+        // Gestützt durch LastHitData in den Spieldaten: bei höchstens 30 % Rest-Leben rechnet das
+        // Spiel mit MaxOnHitDamage (10–80), darüber mit MinOnHitDamage (5–40).
         impactMagic(hitTarget) {
-          const missing = 1 - hitTarget.hp / hitTarget.maxHp;
-          return base * (1 + Math.max(0, Math.min(1, missing)));
+          const missing = Math.max(0, 1 - hitTarget.hp / hitTarget.maxHp);
+          const steps = Math.floor((missing + 1e-9) / 0.05);
+          return base * (1 + Math.min(1, steps / 14));
         },
       };
     },
@@ -593,14 +604,23 @@ const LH_PASSIVES = {
 
   Graves: {
     name: 'New Destiny',
-    summary: 'Jeder Schuss feuert 4 Schrotkugeln: die erste 70 bis 100 % AD, jede weitere auf dasselbe Ziel 33,3 % davon. Minions vor dem Ziel fangen Kugeln ab. Nach 2 Schüssen wird nachgeladen (2,08 Sekunden auf Level 1, schneller mit steigendem Level).',
+    summary: 'Jeder Schuss feuert 4 Schrotkugeln: die erste 70 bis 100 % AD, jede weitere auf dasselbe Ziel 33,3 % davon. Minions vor dem Ziel fangen Kugeln ab. Nach 2 Schüssen wird nachgeladen (2,08 Sekunden auf Level 1, schneller mit steigendem Level). Nach einem einzelnen Schuss ist die Patrone 3,5 Sekunden später wieder geladen (gemessen auf Level 1).',
     attackTimeScale(state) {
       // Zwischen den zwei Patronen kurzer Abstand (Schätzung 0,4 s), danach Nachladen
       return 0.4 * lh.stats.attackSpeed; // Nachladen kommt über cooldownOverride dazu
     },
+    // Einzelne Patrone lädt nach, wenn Graves nicht weiter angreift:
+    // gemessen im Practice Tool auf Level 1 (zwei Messungen, je 105 Bilder bei 30 fps = 3,50 s ±0,03 s)
+    onUpdate(state) {
+      if (state.shells !== 1 || state.lastShotAt === undefined) return;
+      const growthAs = ((lh.champ.stats.attackspeedperlevel || 0) * lhGrowth(lh.level)) / 100;
+      const refill = 3.5 / (1 + growthAs); // Skalierung mit dem Level: Annahme wie beim vollen Nachladen
+      if (lh.time - state.lastShotAt >= refill) state.shells = 2;
+    },
     onAttack(state, target, level) {
       if (state.shells === undefined || state.shells <= 0) state.shells = 2;
       state.shells -= 1;
+      state.lastShotAt = lh.time;
       const first = lhByLevel([0.7, 0.7113, 0.7234, 0.7363, 0.75, 0.7644, 0.7797, 0.7958, 0.8126, 0.8303, 0.8487, 0.8679, 0.888, 0.9088, 0.9304, 0.9528, 0.976, 1.0001], level); // Spieldaten
       const extra = 0.333 * first; // weitere Kugeln: 33,3 % der ersten (Spieldaten)
       // Minions zwischen Graves und dem Ziel im Kegel fangen je eine Kugel ab (Kegel: Schätzung ±15 Grad)
@@ -1698,7 +1718,7 @@ function lhPlayerAttackDamage(target) {
   return damage;
 }
 
-function lhLaunch(target, attack) {
+function lhLaunch(target, attack, speedOverride) {
   if (lhIsMelee()) {
     lhSlash(target, player, '#e0f2fe', true);
     if (lh.playerSwing) lh.playerSwing.hitAt = lh.time;
@@ -1712,7 +1732,7 @@ function lhLaunch(target, attack) {
     lhApplyAttack(target, attack);
     return;
   }
-  lhMissile(player.x, player.y, target, lhProjectileSpeed(), () => lhApplyAttack(target, attack), {
+  lhMissile(player.x, player.y, target, speedOverride ? speedOverride * LH.UNIT : lhProjectileSpeed(), () => lhApplyAttack(target, attack), {
     color: '#5eead4',
     size: 2.6,
     glow: true,
@@ -1779,7 +1799,7 @@ function lhPlayerFire(target) {
             .filter((m) => m.alive && m.team === 'red' && lhEdgeDist(LH_PLAYER, m) <= range)
             .sort((a, b) => lhDist(LH_PLAYER, a) - lhDist(LH_PLAYER, b))[0];
         }
-        if (shotTarget) lhLaunch(shotTarget, { ad: lh.stats.ad * shot.adRatio, bonus: {} });
+        if (shotTarget) lhLaunch(shotTarget, { ad: lh.stats.ad * shot.adRatio, bonus: {} }, shot.speed);
       },
     });
   }
